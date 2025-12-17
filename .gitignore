@@ -44,6 +44,13 @@ backend/media/
 backend/staticfiles/
 backend/docs_to_ingest
 
+# Arquivos de migração do Django (geralmente não versionados)
+backend/core/migrations/
+backend/gamification/migrations/
+backend/medical/migrations/
+backend/social/migrations/
+
+
 # --- NODE.JS / NEXT.JS (Frontend) ---
 frontend/node_modules/
 node_modules/
