@@ -1,0 +1,69 @@
+# =======================================================
+# VITALIA PLATFORM - MASTER GITIGNORE em 2025-12-14 11:48
+# =======================================================
+
+# --- SISTEMA OPERACIONAL & IDEs (Global) ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- SEGURANÇA & SEGREDOS (CRÍTICO) ---
+# Bloqueia qualquer arquivo .env em qualquer subpasta
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# O "Cofre" de chaves do Django e os backups nunca deve ir para o Git
+encryption_keys/
+backups/
+
+# --- PYTHON / DJANGO (Backend) ---
+backend/.venv/
+backend/venv/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+
+# Logs do Celery
+celerybeat-schedule
+celerybeat.pid
+backend/docs_to_ingest/
+
+# Arquivos estáticos e de mídia gerados
+backend/media/
+backend/staticfiles/
+backend/docs_to_ingest
+
+# --- NODE.JS / NEXT.JS (Frontend) ---
+frontend/node_modules/
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Builds de produção e cache do Next.js
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/dist/
+
+# Arquivos de ambiente local do Next.js (redundância de segurança)
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts

@@ -1,0 +1,64 @@
+# vitalia-platform/docker-compose.yml  em 2025-12-14 11:48
+
+services:
+  # Banco de Dados Principal com Suporte a Vetores
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: vitalia_db
+    environment:
+      POSTGRES_DB: vitalia_db
+      POSTGRES_USER: vitalia_user
+      POSTGRES_PASSWORD: vitalia_pass
+      TZ: 'America/Cuiaba'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vitalia_user -d vitalia_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis para Celery e Channels (WebSocket)
+  redis:
+    image: "redis:alpine"
+    container_name: vitalia_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  # LLM Local (Ollama) - Opcional para dev em máquinas fracas
+  ollama:
+    image: ollama/ollama
+    container_name: vitalia_ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+              
+  # Serviço de API para Processamento de Documentos com Unstructured
+  unstructured_api:
+      image: quay.io/unstructured-io/unstructured-api:latest
+      container_name: unstructured_api
+      ports:
+        - "8002:8000"
+      environment:
+        - UNSTRUCTURED_PARSING_STRATEGY=hi_res # Força padrão hi_res se não especificado
+      volumes:
+        - unstructured_cache:/home/notebook-user/.cache/huggingface # Persiste os modelos de IA
+      restart: unless-stopped
+  
+volumes:
+  postgres_data:
+  ollama_data:
+  unstructured_cache:

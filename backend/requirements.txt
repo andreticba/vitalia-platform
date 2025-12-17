@@ -1,0 +1,40 @@
+# backend/requirements.txt em 2025-12-14 11:48
+
+# --- Core Framework & API ---
+django~=5.0
+djangorestframework~=3.15
+django-cors-headers~=4.3
+python-dotenv~=1.0
+
+# --- Async, Real-time & Workers ---
+daphne~=4.1
+channels~=4.0
+channels-redis~=4.2
+celery~=5.4
+redis~=5.0
+django-celery-beat~=2.6
+kombu~=5.4.0
+
+# --- Database & Vector Store ---
+psycopg2-binary~=2.9
+pgvector~=0.4.1
+
+# --- Security & Compliance (Data Vault) ---
+django-crypto-fields~=1.1
+djangorestframework-simplejwt~=5.3
+
+# --- HTTP Client & Utils ---
+httpx~=0.27
+whitenoise~=6.7
+ipython  # Para debug no shell
+
+# --- Testing & Quality Assurance ---
+pytest~=8.0
+pytest-django~=4.8
+factory-boy~=3.3
+pytest-mock~=3.12
+
+# --- Implementation RAG ---
+langchain-text-splitters~=0.3.0
+markdownify~=0.11.6
+pypdf~=4.0.0
