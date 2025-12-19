@@ -55,7 +55,7 @@ echo -e "${YELLOW}[2/4] Configurando Backend (Python/Django)...${NC}"
 
 if [ -d "backend" ]; then
     cd backend
-    
+    cd ..
     if [ -d ".venv" ]; then
         echo "   -> Removendo .venv antigo..."
         rm -rf .venv
@@ -67,6 +67,7 @@ if [ -d "backend" ]; then
     echo "   -> Ativando e instalando dependências..."
     source .venv/bin/activate
     
+    cd backend
     pip install --upgrade pip > /dev/null
     if pip install -r requirements.txt; then
         echo -e "${GREEN}[OK] Dependências Python instaladas.${NC}"

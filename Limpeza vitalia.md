@@ -60,6 +60,10 @@ Execute os seguintes comandos no terminal, na raiz do projeto (`vitalia-platform
 	cd backend
     docker compose exec db psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
+    # Baixa o modelo de linguagem principal definido no .env e o modelo de visão computacional
+    docker compose exec ollama ollama pull $(grep OLLAMA_GENERATION_MODEL .env | cut -d '=' -f2)
+    docker compose exec ollama ollama pull llava
+
 	# Recria e executa as migrações
 	python manage.py makemigrations
 	python manage.py migrate

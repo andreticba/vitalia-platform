@@ -3,45 +3,65 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from medical.models import (
-    Bone, Joint, Muscle, 
-    JointStructure, JointMovement, 
-    MuscleAction, MuscleBoneAttachment, JointBone,
+    # Anatomia Base
+    Bone, Joint, Muscle, BoneLandmark,
+    # Conexões e Estruturas
+    JointStructure, JointMovement, JointBone, 
+    MuscleAction, MuscleBoneAttachment,
+    # Exercícios e Treinos
     Exercise, ExerciseMuscle,
-    ResistanceRoutine # Importante para o Cascade
+    ResistanceRoutine, ResistanceWorkout, WorkoutSet,
+    # Segurança e Patologia (NOVO)
+    Pathology, MovementContraindication
 )
 
 class Command(BaseCommand):
-    help = 'LIMPEZA PROFUNDA: Apaga Anatomia, Exercícios e Rotinas de Treino para recarga limpa.'
+    help = 'SANITIZAÇÃO TOTAL: Apaga todo o Knowledge Hub (Anatomia, Exercícios, Patologias) para reconstrução limpa.'
 
     def handle(self, *args, **kwargs):
-        self.stdout.write(self.style.ERROR('⚠️  ATENÇÃO: Iniciando sanitização total do Medical Hub...'))
+        self.stdout.write(self.style.ERROR('⚠️  ATENÇÃO: Iniciando PROTOCOLO DE DESTRUIÇÃO do Knowledge Hub...'))
         
-        with transaction.atomic():
-            # 1. Limpar Cinesiologia e Estruturas
-            self.stdout.write('Apagando Ações Musculares e Estruturas...')
-            MuscleAction.objects.all().delete()
-            JointStructure.objects.all().delete()
-            JointMovement.objects.all().delete()
-            
-            # 2. Limpar Conexões Anatômicas
-            self.stdout.write('Apagando Conexões (JointBone / MuscleAttachments)...')
-            JointBone.objects.all().delete()
-            MuscleBoneAttachment.objects.all().delete()
-            
-            # 3. Limpar Treinos (CRÍTICO: Libera os Exercícios para deleção)
-            # Ao deletar a Rotina, o Django deleta em cascata: Workouts -> WorkoutSets
-            self.stdout.write('Apagando Histórico de Treinos (Rotinas/Workouts/Sets)...')
-            ResistanceRoutine.objects.all().delete()
-            
-            # 4. Limpar Exercícios e Músculos
-            # Agora podemos deletar exercícios pois não há Sets apontando para eles
-            self.stdout.write('Apagando Catálogo de Exercícios e Associações...')
-            ExerciseMuscle.objects.all().delete()
-            Exercise.objects.all().delete()
-            
-            self.stdout.write('Apagando Entidades Anatômicas (Músculos, Articulações, Ossos)...')
-            Muscle.objects.all().delete()
-            Joint.objects.all().delete()
-            Bone.objects.all().delete()
+        try:
+            with transaction.atomic():
+                # 1. Camada de Segurança (Patologias dependem de Movimentos, mas Movimentos dependem de Juntas)
+                # Apagamos as contraindicações primeiro para liberar Movimentos e Patologias
+                self._wipe(MovementContraindication, "Contraindicações de Movimento")
+                self._wipe(Pathology, "Patologias")
 
-        self.stdout.write(self.style.SUCCESS('✅ Base Sanitizada (0 registros de Anatomia/Treino). Pronta para Seed.'))
+                # 2. Cinesiologia e Estruturas
+                self._wipe(MuscleAction, "Ações Musculares")
+                self._wipe(JointStructure, "Estruturas Articulares (Ligamentos/Meniscos)")
+                self._wipe(JointMovement, "Movimentos Articulares")
+                
+                # 3. Conexões Anatômicas (Tabelas Pivot)
+                self._wipe(JointBone, "Conexões Articulação-Osso")
+                self._wipe(MuscleBoneAttachment, "Fixações Musculares (Origem/Inserção)")
+                
+                # 4. Dados de Treino (Legacy - Remove dependências de Exercício)
+                self._wipe(WorkoutSet, "Séries de Treino") # Apaga os sets primeiro
+                self._wipe(ResistanceWorkout, "Treinos (Workouts)")
+                self._wipe(ResistanceRoutine, "Rotinas de Resistência")
+                
+                # 5. Exercícios e Músculos
+                self._wipe(ExerciseMuscle, "Associações Exercício-Músculo")
+                self._wipe(Exercise, "Catálogo de Exercícios")
+                self._wipe(Muscle, "Músculos")
+                
+                # 6. Anatomia Estrutural (A Base)
+                self._wipe(BoneLandmark, "Acidentes Ósseos (Landmarks)") # Crítico apagar antes dos ossos
+                self._wipe(Joint, "Articulações")
+                self._wipe(Bone, "Ossos")
+
+            self.stdout.write(self.style.SUCCESS('✅ SANITIZAÇÃO CONCLUÍDA. O sistema está limpo e pronto para o Seed.'))
+
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f'❌ ERRO CRÍTICO DURANTE O RESET: {e}'))
+            raise e
+
+    def _wipe(self, model_class, label):
+        count = model_class.objects.count()
+        if count > 0:
+            model_class.objects.all().delete()
+            self.stdout.write(f"   -> Apagados {count} registros de {label}.")
+        else:
+            self.stdout.write(f"   -> {label} já estava limpo.")

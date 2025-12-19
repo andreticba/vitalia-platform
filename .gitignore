@@ -43,6 +43,7 @@ backend/docs_to_ingest/
 backend/media/
 backend/staticfiles/
 backend/docs_to_ingest
+*.log
 
 # Arquivos de migração do Django (geralmente não versionados)
 backend/core/migrations/

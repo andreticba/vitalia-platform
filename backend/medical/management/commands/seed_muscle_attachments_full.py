@@ -5,7 +5,7 @@ from django.db import transaction
 from medical.models import Muscle, Bone, BoneLandmark, MuscleBoneAttachment, AttachmentType, SkeletonDivision, BoneType, BodySegment
 
 class Command(BaseCommand):
-    help = 'Mapeamento biomecânico V6 (Final): Expansão inteligente de grupos e correção de nomes.'
+    help = 'Mapeamento biomecânico V6 (Final): Expansão inteligente de grupos e correção de nomes com Logging Verboso.'
 
     def handle(self, *args, **kwargs):
         self.stdout.write(self.style.WARNING('Iniciando mapeamento muscular granular (V6)...'))
@@ -13,8 +13,7 @@ class Command(BaseCommand):
         self.landmark_cache = {}
         self.ensure_critical_structures()
 
-        # --- MAPA DE TRADUÇÃO DE GRUPOS (A Chave para eliminar os erros) ---
-        # Mapeia "Nome do Grupo Antigo" -> [Lista de Nomes de Ossos Reais no Banco]
+        # --- MAPA DE TRADUÇÃO DE GRUPOS ---
         self.group_expansion_map = {
             # Coluna
             "Vértebras Cervicais (C3-C7)": [f"Vértebra Cervical C{i}" for i in range(3, 8)],
@@ -28,7 +27,7 @@ class Command(BaseCommand):
             "Costelas (1-12)": [f"Costela {i}" for i in range(1, 13)],
             "Costelas (1-8)": [f"Costela {i}" for i in range(1, 9)],
             "Costelas (5-12)": [f"Costela {i}" for i in range(5, 13)],
-            "Cartilagens Costais (5-7)": [f"Costela {i}" for i in range(5, 8)], # Simplificação para o osso costela
+            "Cartilagens Costais (5-7)": [f"Costela {i}" for i in range(5, 8)],
             "Cartilagens Costais": [f"Costela {i}" for i in range(1, 11)],
 
             # Mão
@@ -42,7 +41,7 @@ class Command(BaseCommand):
             "Falanges Médias (Mão)": [f"Falange Média da Mão {r}" for r in ["II", "III", "IV", "V"]],
             "Falanges Distais (Mão)": [f"Falange Distal da Mão {r}" for r in ["I", "II", "III", "IV", "V"]],
             
-            # Específicos Mão (Correção de nomes singulares)
+            # Específicos Mão
             "Falange Distal I": ["Falange Distal da Mão I"],
             "Falange Distal II": ["Falange Distal da Mão II"],
             "Falange Distal V": ["Falange Distal da Mão V"],
@@ -60,10 +59,10 @@ class Command(BaseCommand):
             "Falanges Distais (Pé)": [f"Falange Distal do Pé {r}" for r in ["I", "II", "III", "IV", "V"]],
             
             "Falange Distal I (Pé)": ["Falange Distal do Pé I"],
-            "Falange Distal I": ["Falange Distal do Pé I"], # Ambiguidade resolvida pelo contexto do músculo
+            "Falange Distal I": ["Falange Distal do Pé I"],
         }
 
-        # --- LISTA DE DADOS (MANTIDA IGUAL À V4) ---
+        # --- LISTA DE DADOS ---
         mapping = [
             # FACE E PESCOÇO
             ("Occipitofrontal (Ventre Frontal)", [("Estruturas de Tecido Mole", "Aponeurose Epicraniana", "ORIGEM"), ("Estruturas de Tecido Mole", "Pele da Sobrancelha", "INSERCAO")]),
@@ -306,23 +305,26 @@ class Command(BaseCommand):
             ("Interósseo Plantar do Pé (3º)", [("Metatarsos (I-V)", "Metatarso V", "ORIGEM"), ("Falanges Proximais (Pé)", "Base da Falange Proximal V", "INSERCAO")]),
         ]
 
-        success_count = 0
+        created_count = 0
+        updated_count = 0
         error_count = 0
 
         with transaction.atomic():
             for muscle_name, attachments in mapping:
                 muscle = Muscle.objects.filter(name__iexact=muscle_name).first()
                 if not muscle:
-                    # Músculo não encontrado no banco (provavelmente nome diferente)
-                    # self.stdout.write(self.style.WARNING(f"Músculo '{muscle_name}' não encontrado no banco."))
+                    self.stdout.write(self.style.ERROR(f"Músculo '{muscle_name}' não encontrado no banco."))
                     continue
                 
+                # Log Verboso: Nome do Músculo
+                self.stdout.write(f"\n💪 {self.style.MIGRATE_HEADING(muscle_name)}")
+
                 for bone_name_input, landmark_name, type_str in attachments:
                     # Tenta resolver ossos granulares
                     target_bones = self.resolve_bones(bone_name_input)
                     
                     if not target_bones:
-                        self.stdout.write(self.style.ERROR(f"Osso(s) não encontrado(s) para: {bone_name_input}"))
+                        self.stdout.write(self.style.ERROR(f"   ❌ Osso(s) não encontrado(s) para: {bone_name_input}"))
                         error_count += 1
                         continue
 
@@ -331,15 +333,33 @@ class Command(BaseCommand):
                         landmark = self.get_or_create_landmark(bone, landmark_name)
                         att_enum = AttachmentType.ORIGIN if type_str == "ORIGEM" else AttachmentType.INSERTION
                         
-                        MuscleBoneAttachment.objects.update_or_create(
+                        obj, created = MuscleBoneAttachment.objects.update_or_create(
                             muscle=muscle,
                             landmark=landmark,
                             defaults={'attachment_type': att_enum}
                         )
                         
-                    success_count += 1
+                        # Log Verboso: Detalhes da Conexão
+                        status_icon = "✨" if created else "🔄"
+                        status_color = self.style.SUCCESS if created else self.style.WARNING
+                        status_text = "CRIADO" if created else "ATUALIZADO"
+                        
+                        msg = f"   {status_icon} [{status_text}] {type_str}: {bone.name} -> {landmark.name}"
+                        self.stdout.write(status_color(msg))
 
+                        if created:
+                            created_count += 1
+                        else:
+                            updated_count += 1
+
+        # Resumo Final
+        self.stdout.write(self.style.SUCCESS('\n======================================================'))
         self.stdout.write(self.style.SUCCESS(f'Mapeamento V6 Concluído!'))
+        self.stdout.write(self.style.SUCCESS(f'Registros Criados: {created_count}'))
+        self.stdout.write(self.style.WARNING(f'Registros Atualizados: {updated_count}'))
+        if error_count > 0:
+            self.stdout.write(self.style.ERROR(f'Erros de Resolução de Osso: {error_count}'))
+        self.stdout.write(self.style.SUCCESS('======================================================'))
 
     def resolve_bones(self, bone_name_input):
         """
