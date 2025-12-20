@@ -61,4 +61,4 @@ services:
 volumes:
   postgres_data:
   ollama_data:
-#  unstructured_cache:
+  unstructured_cache:

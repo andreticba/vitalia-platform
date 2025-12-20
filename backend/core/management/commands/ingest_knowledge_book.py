@@ -1,4 +1,4 @@
-# backend/core/management/commands/ingest_knowledge_book.py em 2025-12-14 11:48
+# backend/core/management/commands/ingest_knowledge_book.py
 
 import os
 import hashlib
@@ -7,6 +7,7 @@ import httpx
 import time
 import sys
 import re
+import traceback
 from datetime import datetime, timedelta, timezone
 from django.core.management.base import BaseCommand
 from django.conf import settings
@@ -37,17 +38,16 @@ class LogColors:
 
 class Command(BaseCommand):
     help = """
-    Ferramenta de Ingestão de Conhecimento V4 (Vitalia Platform).
+    Ferramenta de Ingestão de Conhecimento V7 (Vitalia Platform).
     
     Realiza o pipeline completo de ETL (Extract, Transform, Load) para documentos PDF médicos.
-    Utiliza estratégias híbridas de OCR, Visão Computacional (Llama/LLaVA) e Chunking Semântico.
     
-    Exemplos:
-      # Produção (Salva no Banco):
-      python manage.py ingest_knowledge_book anatomia.pdf --lang pt --vision-model llava
-      
-      # Simulação (Não salva, gera log detalhado):
-      python manage.py ingest_knowledge_book anatomia.pdf --dry-run --pages "10-20" --log-file teste.log
+    Funcionalidades Principais:
+    1. Extração Atômica: Preserva a paginação exata removendo a estratégia de chunking da API.
+    2. Vision RAG: Analisa imagens médicas usando modelos LLaVA/Llama-Vision locais.
+    3. Tratamento de Tabelas: Converte tabelas HTML complexas em Markdown estruturado.
+    4. Sanitização de Texto: Corrige hifenização fantasma (ex: "múscu- los") em todo o conteúdo.
+    5. Gestão de Memória: Carrega e descarrega modelos da GPU sequencialmente (ideal para VRAM limitada).
     """
 
     def add_arguments(self, parser):
@@ -62,24 +62,29 @@ class Command(BaseCommand):
             type=str, 
             default='en', 
             choices=['pt', 'en'],
-            help='Idioma predominante do documento (pt/en). Define o modelo de OCR. Padrão: en'
+            help='Idioma predominante do documento (pt/en). Define o modelo de OCR e metadados. Padrão: en'
         )
         
-        # Configuração de Chunking
+        # Configuração de Chunking e Texto
         parser.add_argument(
             '--max-chars', 
             type=int, 
             default=2000, 
-            help='Tamanho máximo do bloco de texto (Chunk). Padrão: 2000 caracteres.'
+            help='Tamanho máximo do bloco de texto (Chunk). Recomendado: 2000-4000 para Llama3. Padrão: 2000.'
         )
         parser.add_argument(
             '--overlap', 
             type=int, 
             default=300, 
-            help='Sobreposição entre chunks para manter contexto. Padrão: 300 caracteres.'
+            help='Sobreposição entre chunks para manter contexto entre quebras. Padrão: 300 caracteres.'
+        )
+        parser.add_argument(
+            '--fix-hyphens',
+            action='store_true',
+            help='ATIVAR PARA TEXTOS JUSTIFICADOS. Corrige hifenização fantasma (ex: "múscu- los" -> "músculos") em texto narrativo, tabelas e descrições de IA.'
         )
         
-        # Estratégia de Processamento
+        # Estratégia de Processamento Visual
         parser.add_argument(
             '--vision-model', 
             type=str, 
@@ -89,12 +94,12 @@ class Command(BaseCommand):
         parser.add_argument(
             '--text-only', 
             action='store_true', 
-            help='Modo rápido: Ignora processamento visual de imagens e converte tabelas apenas para texto simples.'
+            help='Modo Texto Puro: Ignora completamente imagens e tabelas na extração. Útil para livros narrativos simples.'
         )
         parser.add_argument(
             '--skip-vision', 
             action='store_true', 
-            help='Ignora apenas o processamento de imagens, mas mantém formatação de tabelas.'
+            help='Ignora apenas o processamento de imagens (Vision RAG), mas mantém e processa tabelas.'
         )
         
         # Controle de Execução e Debug
@@ -113,30 +118,30 @@ class Command(BaseCommand):
         parser.add_argument(
             '--pages', 
             type=str, 
-            help='Intervalo de páginas para processar (Ex: "1-10", "50,55,60"). Útil para testes rápidos.'
+            help='Intervalo de páginas para processar (Ex: "1-10", "50,55,60"). Útil para testes rápidos de ingestão.'
         )
         parser.add_argument(
             '--force', 
             action='store_true', 
-            help='Força a re-ingestão mesmo se o documento já estiver marcado como CONCLUÍDO.'
+            help='Força a re-ingestão mesmo se o documento já estiver marcado como CONCLUÍDO no banco de dados.'
         )
         parser.add_argument(
             '--dry-run', 
             action='store_true', 
-            help='Modo Simulação: Executa extração, visão e chunking, grava no log, mas NÃO salva no banco nem gera embeddings.'
+            help='Modo Simulação: Executa todo o pipeline (Extração, Visão, Chunking), grava o resultado no log, mas NÃO salva no banco nem gera embeddings.'
         )
         parser.add_argument(
             '--log-file', 
             type=str, 
-            help='Caminho para salvar o log verboso em arquivo (ex: ingest.log).'
+            help='Caminho para salvar o log verboso em arquivo (ex: ingest_debug.log).'
         )
 
     def log(self, message, level='INFO', to_file_only=False):
-        """Logger customizado."""
+        """Logger customizado híbrido (Console Colorido + Arquivo Texto)."""
         tz = timezone(timedelta(hours=self.gmt))
         now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
         
-        # 1. Output no Console (se não for exclusivo para arquivo)
+        # Output Console
         if not to_file_only:
             color_map = {
                 'INFO': LogColors.BLUE, 'SUCCESS': LogColors.GREEN,
@@ -148,7 +153,7 @@ class Command(BaseCommand):
             console_msg = f"{LogColors.BOLD}[{now}]{LogColors.RESET} {color}[{level}]{LogColors.RESET} {message}"
             self.stdout.write(console_msg)
 
-        # 2. Gravação em Arquivo (Verboso)
+        # Output Arquivo
         if self.log_handle:
             clean_msg = f"[{now}] [{level}] {message}\n"
             self.log_handle.write(clean_msg)
@@ -167,7 +172,8 @@ class Command(BaseCommand):
         except KeyboardInterrupt:
             self.log("Operação cancelada pelo usuário.", 'WARNING')
         except Exception as e:
-            self.log(f"Erro Fatal não tratado: {e}", 'ERROR', exc_info=True)
+            tb = traceback.format_exc()
+            self.log(f"Erro Fatal não tratado: {e}\n{tb}", 'ERROR')
         finally:
             if self.log_handle:
                 self.log_handle.close()
@@ -185,13 +191,13 @@ class Command(BaseCommand):
             self.log(f"Recortando páginas {options['pages']}...", 'INFO')
             file_path = self._slice_pdf(file_path, options['pages'])
 
-        # 2. Registro no Banco (Apenas se não for Dry Run)
+        # 2. Registro no Banco
         doc = None
         if not options['dry_run']:
             doc = self._get_or_create_document(filename, file_path, options)
-            if not doc: return # Já existe e não é force
+            if not doc: return 
         else:
-            self.log("MODO DRY-RUN ATIVADO: Nenhuma alteração será feita no banco de dados.", 'DRY-RUN')
+            self.log("MODO DRY-RUN ATIVADO: Nenhuma alteração será feita no banco.", 'DRY-RUN')
 
         # 3. FASE 1: Extração Atômica
         self.log(">>> FASE 1: Extração Estrutural (OCR/Layout) <<<", 'INFO')
@@ -201,9 +207,9 @@ class Command(BaseCommand):
             self.log("Nenhum elemento extraído. Abortando.", 'ERROR')
             return
 
-        # 4. FASE 2: Enriquecimento (Visão e Tabelas)
-        skip_vision = options['skip_vision'] or options['text_only']
-        if not skip_vision:
+        # 4. FASE 2: Enriquecimento (Visão)
+        # Se --text-only ou --skip-vision estiverem ativos, pula esta fase
+        if not (options['skip_vision'] or options['text_only']):
             self.log(">>> FASE 2: Vision RAG (Análise de Imagens) <<<", 'VISION')
             elements = self._process_images_sequentially(elements, options['vision_model'])
         else:
@@ -214,7 +220,7 @@ class Command(BaseCommand):
         final_chunks = self._enrich_and_chunk(elements, options)
         self.log(f"Total de Chunks Finais: {len(final_chunks)}", 'SUCCESS')
 
-        # 6. FASE 4: Ação (Dry Run vs Produção)
+        # 6. FASE 4: Ação
         if options['dry_run']:
             self._execute_dry_run(final_chunks)
         else:
@@ -232,25 +238,25 @@ class Command(BaseCommand):
         # Configuração dinâmica baseada nas flags
         extract_types = ["Image", "Table"]
         if options['text_only']:
-            # Se for texto puro, não gastamos tempo extraindo blocos de imagem/tabela
             extract_types = []
         elif options['skip_vision']:
-            # Se pular visão, ainda queremos tabelas, mas não imagens
             extract_types = ["Table"]
 
         payload = {
             "strategy": "hi_res",
-            "chunking_strategy": "by_title",
-            "max_characters": options['max_chars'],
-            "combine_under_n_chars": 500,
-            "new_after_n_chars": int(options['max_chars'] * 1.2),
             "languages": [ocr_lang],
+            
+            # Tipos de blocos a extrair como imagem (base64)
             "extract_image_block_types": extract_types,
             "extract_image_block_to_payload": True if extract_types else False,
+            
+            # Parâmetros auxiliares
+            "include_page_breaks": True, 
             "coordinates": False,
+            "xml_keep_tags": False,
         }
 
-        self.log(f"Enviando para API (Lang: {ocr_lang} | TextOnly: {options['text_only']})...", 'INFO')
+        self.log(f"Enviando para API (Lang: {ocr_lang} | Atomic Elements)...", 'INFO')
         try:
             with open(file_path, "rb") as f:
                 files = {"files": (os.path.basename(file_path), f)}
@@ -263,6 +269,7 @@ class Command(BaseCommand):
             return []
 
     def _process_images_sequentially(self, elements, model_name):
+        """Processa imagens uma a uma com filtro de qualidade e sanitização."""
         image_elements = [el for el in elements if el.get('metadata', {}).get('image_base64')]
         total_imgs = len(image_elements)
         
@@ -272,6 +279,7 @@ class Command(BaseCommand):
 
         self.log(f"Iniciando inferência visual em {total_imgs} imagens...", 'VISION')
         start_global = time.time()
+        skipped_imgs = 0
 
         for i, el in enumerate(image_elements):
             start_item = time.time()
@@ -279,6 +287,11 @@ class Command(BaseCommand):
             el_type = el.get('type')
             page = el.get('metadata', {}).get('page_number', '?')
             
+            # FILTRO 1: Tamanho mínimo (~3KB)
+            if len(base64_img) < 4000:
+                skipped_imgs += 1
+                continue
+
             prompt = (
                 "Analise esta imagem médica técnica. Descreva detalhadamente as estruturas anatômicas, "
                 "rótulos visíveis e relações espaciais. Seja técnico e preciso."
@@ -298,98 +311,101 @@ class Command(BaseCommand):
                     options={"temperature": 0.1}
                 )
                 
+                # FILTRO 2: Sanitização de caracteres de controle
                 description = response.get('response', '').strip()
-                duration = time.time() - start_item
+                description = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', description)
                 
-                if description:
-                    el['text'] = f"[DESCRIÇÃO VISUAL IA]: {description}\n\n[CONTEÚDO OCR]: {el.get('text', '')}"
-                    el['metadata']['vision_processed'] = True
-                    
-                    # Log verboso para análise de tempo (solicitado pelo usuário)
-                    self.log(f"Img Pág {page} ({el_type}) processada em {duration:.2f}s", 'VISION', to_file_only=True)
-                    
-                    # Barra de progresso na tela
-                    self._print_progress(i + 1, total_imgs, start_global, label="Visão Computacional")
+                # FILTRO 3: Qualidade mínima (evitar alucinações de ruído)
+                if len(description) < 10 or not any(c.isalpha() for c in description):
+                    skipped_imgs += 1
+                    continue
+                
+                el['text'] = f"[DESCRIÇÃO VISUAL IA]: {description}\n\n[CONTEÚDO OCR]: {el.get('text', '')}"
+                el['metadata']['vision_processed'] = True
+                
+                self.log(f"Img Pág {page} ({el_type}) processada em {time.time() - start_item:.2f}s", 'VISION', to_file_only=True)
+                self._print_progress(i + 1, total_imgs, start_global, label="Visão Computacional")
 
             except Exception as e:
                 self.log(f"Falha na imagem {i} (Pág {page}): {e}", 'ERROR')
 
-        print("") # Quebra linha após a barra
+        print("") 
+        if skipped_imgs > 0:
+            self.log(f"Imagens ignoradas (pequenas ou inválidas): {skipped_imgs}", 'WARNING')
         
-        # Descarrega VRAM para liberar para o próximo modelo
         self.log("Descarregando modelo de visão...", 'INFO')
-        self._unload_ollama_model(model_name)
+        self._unload_model(model_name)
         
         return elements
 
     def _enrich_and_chunk(self, elements, options):
-        # 1. Enriquecimento e Consolidação
         full_text_stream = ""
-        total_imgs = sum(1 for el in elements if el.get('type') == 'Image')
-        img_processed = 0
         
-        # Rastreia a página atual para injetar marcadores no texto narrativo
+        # Rastreia a página atual para injetar marcadores
         current_processing_page = None
 
         for el in elements:
             el_type = el.get('type')
             text = el.get('text', '').strip()
             meta = el.get('metadata', {})
-            # Garante que page seja um número ou None, nunca '?' para lógica
             page = meta.get('page_number') 
             
             # --- FILTROS DE EXCLUSÃO ---
             if el_type in ['Header', 'Footer']: continue
             if len(text) < 5 and el_type == "Uncategorized": continue
 
-            # FLAG TEXT-ONLY ESTRICTA
             if options['text_only']:
                 if el_type in ['Table', 'Image', 'FigureCaption']:
                     continue
 
+            # --- CORREÇÃO DE HIFENIZAÇÃO (TEXTO NARRATIVO) ---
+            if options['fix_hyphens'] and text:
+                text = self._fix_hyphenation(text)
+
             # --- INJEÇÃO DE MARCADOR DE PÁGINA ---
-            # Se for um elemento PageBreak OU se o metadado de página mudou
             is_new_page = (el_type == "PageBreak") or (page is not None and page != current_processing_page)
             
             if is_new_page and page is not None:
                 full_text_stream += f"\n\n=== PÁG {page} ===\n\n"
                 current_processing_page = page
-                if el_type == "PageBreak": continue # Não adiciona texto do pagebreak
-
-            # --- TRATAMENTO DE IMAGEM ---
-            if el_type == "Image" and not options['skip_vision']:
-                base64_img = meta.get('image_base64')
-                if base64_img:
-                    prompt = "Analise esta imagem médica técnica..." # (Prompt abreviado para legibilidade)
-                    desc = self._vision_inference(options['vision_model'], prompt, base64_img)
-                    if desc:
-                        full_text_stream += f"\n\n[DESCRIÇÃO VISUAL IA PÁG {page}]: {desc}\n\n"
-                        img_processed += 1
-                continue 
+                if el_type == "PageBreak": continue 
 
             # --- TRATAMENTO DE TABELA ---
             if el_type == "Table":
                 html = meta.get('text_as_html')
                 if html:
                     md_table = md(html)
+                    
+                    # CORREÇÃO: Aplica fix-hyphens também na Tabela Markdown
+                    if options['fix_hyphens']:
+                        md_table = self._fix_hyphenation(md_table)
+                    
                     full_text_stream += f"\n\n### TABELA PÁG {page}\n{md_table}\n\n"
-                    if meta.get('vision_processed'):
-                        vision_text = text.split('[DESCRIÇÃO VISUAL IA]:')[1].split('[CONTEÚDO OCR]:')[0]
-                        full_text_stream += f"\n> Transcrição IA: {vision_text}\n\n"
+                    
+                    if meta.get('vision_processed') and '[DESCRIÇÃO VISUAL IA]:' in text:
+                        try:
+                            vision_part = text.split('[DESCRIÇÃO VISUAL IA]:')[1].split('[CONTEÚDO OCR]:')[0]
+                            # CORREÇÃO: Aplica fix-hyphens na Visão
+                            if options['fix_hyphens']:
+                                vision_part = self._fix_hyphenation(vision_part)
+                            full_text_stream += f"\n> Transcrição IA: {vision_part.strip()}\n\n"
+                        except IndexError:
+                            pass
                     continue
 
-            # --- TEXTO NARRATIVO ---
+            # --- TRATAMENTO DE IMAGEM/TEXTO ---
+            # Se for imagem processada, 'text' já contém a descrição visual.
+            # Se a flag fix-hyphens estiver ativa, já foi aplicada no início do loop.
             full_text_stream += f"{text}\n\n"
 
-        # Limpeza de memória GPU
-        if not options['skip_vision'] and not options['text_only'] and total_imgs > 0:
+        # Limpeza extra de memória
+        if not options['skip_vision'] and not options['text_only']:
+            # Chamada de segurança caso algo tenha ficado na memória
             self._unload_model(options['vision_model'])
 
-        # 2. Chunking Local
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=options['max_chars'],
             chunk_overlap=options['overlap'],
-            # Adicionei o marcador de página como separador prioritário
             separators=["=== PÁG", "\n\n### ", "\n\n", ". ", " ", ""],
             keep_separator=True
         )
@@ -397,24 +413,20 @@ class Command(BaseCommand):
         raw_chunks = splitter.split_text(full_text_stream)
         
         final_chunks = []
-        # Memória do número da página para chunks que são continuação
         last_seen_page = None 
 
         for content in raw_chunks:
-            # Tenta encontrar o marcador explícito
-            # Regex busca 'PÁG 123' em qualquer formato (=== PÁG 123 === ou [DESCRIÇÃO... PÁG 123])
             page_match = re.search(r'PÁG (\d+)', content)
             
             if page_match:
                 current_page_num = int(page_match.group(1))
                 last_seen_page = current_page_num
             else:
-                # Se não tem marcador, usa a última página vista (continuação do texto)
                 current_page_num = last_seen_page
             
             meta = {
                 "source": options['filename'],
-                "generated_by": "Vitalia V4 Ingest",
+                "generated_by": "Vitalia V7 Ingest",
                 "is_table": "### TABELA" in content,
                 "has_vision": "[DESCRIÇÃO VISUAL IA" in content,
                 "ingestion_date": datetime.now().isoformat()
@@ -423,11 +435,18 @@ class Command(BaseCommand):
             
         return final_chunks
 
+    def _fix_hyphenation(self, text):
+        """
+        Corrige hifenização fantasma causada por justificação de texto em PDFs.
+        Ex: "múscu- los" -> "músculos"
+        """
+        pattern = r'([a-zA-Zà-úÀ-ÚçÇ])-[\s\n]+([a-zà-úç])'
+        return re.sub(pattern, r'\1\2', text)
+
     def _execute_dry_run(self, chunks):
         self.log("--- INÍCIO RELATÓRIO DRY-RUN ---", 'DRY-RUN')
         self.log(f"Total Chunks: {len(chunks)}", 'DRY-RUN')
         
-        # Loga os chunks no arquivo
         if self.log_handle:
             for i, c in enumerate(chunks):
                 self.log_handle.write(f"\n--- Chunk {i+1} (Pág {c['page']}) ---\n")
@@ -442,7 +461,6 @@ class Command(BaseCommand):
         total = len(chunks)
         start_time = time.time()
         
-        # Limpeza prévia
         doc.chunks.all().delete()
         
         db_objs = []
@@ -458,10 +476,8 @@ class Command(BaseCommand):
                     metadata=item['metadata']
                 ))
                 
-                # Barra de progresso visual
                 self._print_progress(i + 1, total, start_time, label="Vetorização")
                 
-                # Log de tempo individual (apenas arquivo)
                 elapsed = time.time() - start_time
                 avg = elapsed / (i + 1)
                 self.log(f"Chunk {i+1}/{total} vetorizado. Méd: {avg:.2f}s/item", 'INFO', to_file_only=True)
@@ -469,10 +485,9 @@ class Command(BaseCommand):
             except Exception as e:
                 self.log(f"Erro vetorizando chunk {i}: {e}", 'ERROR')
 
-        print("") # Quebra linha
+        print("") 
         
         if db_objs:
-            # Batch Create seguro (500 por vez)
             batch_size = 500
             for i in range(0, len(db_objs), batch_size):
                 DocumentChunk.objects.bulk_create(db_objs[i:i+batch_size])
@@ -480,7 +495,7 @@ class Command(BaseCommand):
             doc.status = Document.DocumentStatus.COMPLETED
             doc.save()
             self.log("Ingestão e Vetorização finalizadas.", 'SUCCESS')
-            self._unload_ollama_model(settings.OLLAMA_EMBEDDING_MODEL)
+            self._unload_model(settings.OLLAMA_EMBEDDING_MODEL)
         else:
             doc.status = Document.DocumentStatus.FAILED
             doc.save()
@@ -505,11 +520,23 @@ class Command(BaseCommand):
         self.stdout.write(output, ending='')
         self.stdout.flush()
         
-        # Grava o progresso final no arquivo apenas quando termina
         if iteration == total and self.log_handle:
             self.log_handle.write(f"\n[{label} Concluído] Total tempo: {str(timedelta(seconds=int(elapsed_time)))}\n")
 
-    def _unload_ollama_model(self, model):
+    def _vision_inference(self, model, prompt, image_b64):
+        try:
+            resp = ollama_client.generate(
+                model=model, 
+                prompt=prompt, 
+                images=[image_b64], 
+                options={"temperature": 0.1}
+            )
+            return resp.get('response', '').strip()
+        except Exception as e:
+            self.log(f"Erro Vision: {e}", 'ERROR')
+            return None
+
+    def _unload_model(self, model):
         try:
             ollama_client.generate(model, "", keep_alive=0)
             self.log(f"Modelo {model} descarregado da VRAM.", 'INFO')
