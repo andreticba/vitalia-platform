@@ -15,7 +15,7 @@ export function useRoleRedirect() {
     } else if (roles.includes('Profissional de Saúde') || roles.includes('Gestor de Clínica')) {
       router.push('/professional/dashboard');
     } else if (roles.includes('Participante')) {
-      router.push('/app/home'); // Área do Paciente
+      router.push('/home'); // Área do Paciente
     } else {
       router.push('/onboarding'); // Fallback para novos usuários sem papel definido
     }

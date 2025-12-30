@@ -1,4 +1,4 @@
-# backend/core/management/commands/ingest_knowledge_book.py
+# backend/core/management/commands/ingest_knowledge_book.py em 2025-12-14 11:48
 
 import os
 import hashlib

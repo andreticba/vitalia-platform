@@ -5,8 +5,8 @@ import { AuthState, UserProfile } from '@/types/auth';
 
 const initialState: AuthState = {
   user: null,
-  accessToken: typeof window !== 'undefined' ? localStorage.getItem('token') : null,
-  refreshToken: typeof window !== 'undefined' ? localStorage.getItem('refresh') : null,
+  accessToken:  null,
+  refreshToken: null,
   isAuthenticated: false,
 };
 

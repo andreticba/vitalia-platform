@@ -1,4 +1,4 @@
-// frontend/src/components/layout/Sidebar.tsx em 2025-12-14 11:48
+// frontend/src/components/layout/Sidebar.tsx - Atualizado com link para Receitas Afetivas em 2025-12-14 11:48
 
 'use client';
 
@@ -8,14 +8,14 @@ import {
   LayoutDashboard, 
   Users, 
   FileText, 
-  Utensils, 
+  Utensils, // Novo ícone para Receitas
   Activity, 
   Settings, 
   ShieldCheck, 
   HeartHandshake 
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAppSelector } from '@/store/hooks'; // Importe do seu hook tipado
+import { useAppSelector } from '@/store/hooks'; 
 import { Button } from '@/components/ui/button';
 
 // Definição dos Links de Navegação
@@ -37,9 +37,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Validar Receitas', href: '/professional/recipes', icon: ShieldCheck, roles: ['Profissional de Saúde'] },
   
   // --- Participante (App) ---
-  { label: 'Meu Dia', href: '/app/home', icon: Activity, roles: ['Participante'] },
-  { label: 'Receitas Afetivas', href: '/app/recipes', icon: Utensils, roles: ['Participante'] },
-  { label: 'Rede de Apoio', href: '/app/social', icon: HeartHandshake, roles: ['Participante'] },
+  { label: 'Meu Dia', href: '/home', icon: Activity, roles: ['Participante'] },
+  { label: 'Receitas Afetivas', href: '/recipes', icon: Utensils, roles: ['Participante'] },
+  { label: 'Rede de Apoio', href: '/social', icon: HeartHandshake, roles: ['Participante'] },
   
   // --- Comum ---
   { label: 'Configurações', href: '/settings', icon: Settings, roles: ['Admin Vitalia', 'Profissional de Saúde', 'Participante'] },

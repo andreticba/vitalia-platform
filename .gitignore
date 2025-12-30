@@ -65,6 +65,7 @@ frontend/.next/
 frontend/out/
 frontend/build/
 frontend/dist/
+frontend/package-lock.json
 
 # Arquivos de ambiente local do Next.js (redundância de segurança)
 frontend/.env.local

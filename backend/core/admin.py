@@ -280,7 +280,7 @@ class UserProfileInline(admin.StackedInline):
     filter_horizontal = ('roles', 'teams')
     show_change_link = True
     fields = ('full_name', 'primary_organization', 'roles')
-    readonly_fields = ('full_name', 'primary_organization', 'roles')
+#    readonly_fields = ('full_name', 'primary_organization', 'roles')
 
 class UserAdmin(BaseUserAdmin):
     inlines = (UserProfileInline,)

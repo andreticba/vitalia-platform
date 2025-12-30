@@ -7,6 +7,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenVerifyView,
 )
+from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import HttpResponse
@@ -23,7 +24,7 @@ api_v1_patterns = [
     path('auth/token/verify/', TokenVerifyView.as_view(), name='token_verify'),
     
     # Apps da Vitalia (Placeholder por enquanto, criaremos os urls.py de cada app na sequência)
-    # path('social/', include('social.urls')), 
+    path('social/', include('social.urls')), 
     # path('medical/', include('medical.urls')),
     path('core/', include('core.urls')),
 ]
@@ -37,6 +38,12 @@ urlpatterns = [
     # Prefixo da API
     path('api/v1/', include(api_v1_patterns)),
     
+    # Documentação da API
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    # Interface Visual (Swagger UI) - Ótimo para testar manualmente
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    # Interface Visual (Redoc) - Ótimo para leitura
+    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     # Health Check simples para o Frontend testar
     path('api/health/', lambda request: __import__('django.http').http.JsonResponse({"status": "ok"})),
     

@@ -1,4 +1,4 @@
-// frontend/src/app/app/home/page.tsx em 2025-12-14 11:48
+// frontend/src/app/home/page.tsx em 2025-12-14 11:48
 'use client';
 import { ProtectedLayout } from '@/components/layout/ProtectedLayout';
 

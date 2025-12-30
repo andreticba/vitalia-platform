@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "channels",
     "django_crypto_fields.apps.AppConfig",
     "django_celery_beat",
+    "drf_spectacular",
     
     # Vitalia Apps (Core Business)
     "core",          # Identidade, DataVault, RBAC
@@ -118,6 +119,7 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
 SIMPLE_JWT = {
@@ -173,3 +175,15 @@ OLLAMA_GENERATION_MODEL = os.getenv("OLLAMA_GENERATION_MODEL")
 # --- Configurações do Unstructured API ---
 UNSTRUCTURED_API_URL = os.getenv("UNSTRUCTURED_API_URL")
 
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Vitalia Platform API',
+    'DESCRIPTION': 'API B2B2C para gestão de saúde, gamificação e rede social.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    # Enumerações devem ser exportadas como literais para o TS entender
+    'ENUM_NAME_OVERRIDES': {
+        'AllergenSeverityEnum': 'social.models.Allergen.Severity',
+        'RecipeStatusEnum': 'social.models.FamilyRecipe.Status',
+    },
+}
