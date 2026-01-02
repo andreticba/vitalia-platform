@@ -3,11 +3,22 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { AuthState, UserProfile } from '@/types/auth';
 
-const initialState: AuthState = {
+export const STORAGE_KEYS = {
+  ACCESS: '@vitalia:access_token_v1',
+  REFRESH: '@vitalia:refresh_token_v1',
+};
+
+// Adiciona isInitialized à interface
+interface ExtendedAuthState extends AuthState {
+  isInitialized: boolean;
+}
+
+const initialState: ExtendedAuthState = {
   user: null,
   accessToken:  null,
   refreshToken: null,
   isAuthenticated: false,
+  isInitialized: false, // <--- O Guardião do F5
 };
 
 const authSlice = createSlice({
@@ -23,19 +34,31 @@ const authSlice = createSlice({
       state.refreshToken = refreshToken;
       if (user) state.user = user;
       state.isAuthenticated = true;
+      state.isInitialized = true; // <--- Boot completo com sucesso
       
-      localStorage.setItem('token', accessToken);
-      localStorage.setItem('refresh', refreshToken);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(STORAGE_KEYS.ACCESS, accessToken);
+        sessionStorage.setItem(STORAGE_KEYS.REFRESH, refreshToken);
+      }
     },
     logout: (state) => {
       state.user = null;
       state.accessToken = null;
       state.refreshToken = null;
       state.isAuthenticated = false;
-      localStorage.clear();
+      state.isInitialized = true; // <--- Boot completo (mesmo que deslogado)
+      
+      if (typeof window !== 'undefined') {
+        sessionStorage.clear();
+        localStorage.clear();
+      }
     },
+    // Nova ação para quando verificamos o storage e não achamos nada
+    initializeAuth: (state) => {
+        state.isInitialized = true;
+    }
   },
 });
 
-export const { setCredentials, logout } = authSlice.actions;
+export const { setCredentials, logout, initializeAuth } = authSlice.actions;
 export default authSlice.reducer;

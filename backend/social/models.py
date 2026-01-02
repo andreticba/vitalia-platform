@@ -111,3 +111,27 @@ class FamilyRecipe(models.Model):
 
     def __str__(self):
         return self.title
+
+class CareConnection(models.Model):
+    """
+    Define o Grafo Social: Quem segue quem por motivos de cuidado/afeto.
+    Separado do DataAccessGrant para não misturar LGPD clínica com Social.
+    """
+    class ConnectionType(models.TextChoices):
+        FAMILY = 'FAMILY', _('Familiar')
+        FRIEND = 'FRIEND', _('Amigo/Apoiador')
+        PROFESSIONAL = 'PRO', _('Profissional (Coach/Médico)')
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    participant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='supporters')
+    supporter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='supporting')
+    
+    connection_type = models.CharField(max_length=20, choices=ConnectionType.choices, default=ConnectionType.FAMILY)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('participant', 'supporter')
+        verbose_name = _("Conexão de Cuidado")
+
+    def __str__(self):
+        return f"{self.supporter.username} apoia {self.participant.username}"

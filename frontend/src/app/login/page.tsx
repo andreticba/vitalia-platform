@@ -1,6 +1,8 @@
 // frontend/src/app/login/page.tsx em 2025-12-14 11:48
+
 'use client';
 
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation } from '@tanstack/react-query';
@@ -15,12 +17,23 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 
 import { loginSchema, LoginSchema } from '@/features/auth/authSchema';
 import { authApi } from '@/features/auth/authApi';
-import { setCredentials } from '@/store/slices/authSlice';
+import { setCredentials, logout } from '@/store/slices/authSlice';
 import { useRoleRedirect } from '@/hooks/useRoleRedirect';
 
 export default function LoginPage() {
   const dispatch = useDispatch();
   const { redirectUser } = useRoleRedirect();
+
+  // --- CORREÇÃO DE SEGURANÇA E ESTADO ---
+  // Ao entrar na tela de login, garantimos que qualquer sessão anterior seja destruída.
+  // Isso resolve o problema de "Menu do Admin aparecendo para o Participante"
+  // quando se troca de usuário na mesma aba.
+  useEffect(() => {
+    dispatch(logout());
+    sessionStorage.clear(); // Limpeza redundante de segurança
+    localStorage.clear();
+  }, [dispatch]);
+  // ---------------------------------------
 
   const form = useForm<LoginSchema>({
     resolver: zodResolver(loginSchema),
@@ -30,7 +43,6 @@ export default function LoginPage() {
   const loginMutation = useMutation({
     mutationFn: authApi.login,
     onSuccess: (data) => {
-      // 1. Salva no Redux/LocalStorage
       dispatch(setCredentials({
         accessToken: data.tokens.access,
         refreshToken: data.tokens.refresh,
@@ -38,8 +50,6 @@ export default function LoginPage() {
       }));
       
       toast.success(`Bem-vindo de volta, ${data.user.full_name || data.user.user.username}!`);
-      
-      // 2. Redireciona baseado no papel
       redirectUser(data.user);
     },
     onError: (error: any) => {

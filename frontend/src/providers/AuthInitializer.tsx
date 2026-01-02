@@ -1,82 +1,91 @@
-// frontend/src/providers/AuthInitializer.tsx
+// frontend/src/providers/AuthInitializer.tsx em 2025-12-14 11:48
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useDispatch } from "react-redux";
 import axios from "axios";
-import { setCredentials, logout } from "@/store/slices/authSlice";
+import { setCredentials, logout, initializeAuth, STORAGE_KEYS } from "@/store/slices/authSlice";
 import { UserProfile } from "@/types/auth";
 import { Loader2 } from "lucide-react";
+import { useAppSelector } from "@/store/hooks";
 
-// Componente de Loading Simples para cobrir a tela enquanto verificamos a sessão
 const FullScreenLoader = () => (
-  <div className="flex h-screen w-screen items-center justify-center bg-background">
-    <div className="flex flex-col items-center gap-4">
-      <Loader2 className="h-10 w-10 animate-spin text-primary" />
-      <p className="text-muted-foreground text-sm">Restaurando sessão segura...</p>
-    </div>
+  <div className="flex h-screen w-screen items-center justify-center bg-background flex-col gap-4">
+    <Loader2 className="h-10 w-10 animate-spin text-primary" />
+    <p className="text-muted-foreground text-sm font-medium">
+      Conectando ao Data Vault...
+    </p>
   </div>
 );
 
 export function AuthInitializer({ children }: { children: React.ReactNode }) {
   const dispatch = useDispatch();
-  const [isLoading, setIsLoading] = useState(true);
+  const isInitialized = useAppSelector((state) => state.auth.isInitialized);
+  const isMounted = useRef(false);
 
   useEffect(() => {
-    const restoreSession = async () => {
-      // 1. Tenta recuperar o refresh token do storage
-      // Nota: Não lemos o access token aqui para forçar uma validação de segurança (refresh)
-      // ou podemos ler para otimizar, mas o refresh garante que o usuário não foi banido.
-      const persistedRefresh = typeof window !== 'undefined' ? localStorage.getItem("refresh") : null;
+    if (isMounted.current) return;
+    isMounted.current = true;
 
-      if (!persistedRefresh) {
-        setIsLoading(false);
+    const initAuth = async () => {
+      console.log("[AuthInitializer] 🚀 Iniciando Boot...");
+      
+      const access = typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEYS.ACCESS) : null;
+      const refresh = typeof window !== 'undefined' ? sessionStorage.getItem(STORAGE_KEYS.REFRESH) : null;
+
+      if (!access || !refresh) {
+        console.log("[AuthInitializer] Nenhum token encontrado. Visitante.");
+        dispatch(initializeAuth()); // Marca como inicializado (mas deslogado)
         return;
       }
 
       try {
-        // 2. Tenta renovar o token usando a URL da API (hardcoded ou via env)
-        // Usamos axios puro aqui para evitar dependências circulares com o interceptor do @/lib/api
         const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
         
-        const refreshResponse = await axios.post<{ access: string }>(
-          `${baseURL}/auth/token/refresh/`,
-          { refresh: persistedRefresh }
+        // Tenta validar o token existente
+        const { data: user } = await axios.get<UserProfile>(
+            `${baseURL}/core/users/me/`,
+            { headers: { Authorization: `Bearer ${access}` } }
         );
 
-        const newAccessToken = refreshResponse.data.access;
+        console.log("[AuthInitializer] ✅ Sessão restaurada:", user.user.username);
+        dispatch(setCredentials({ user, accessToken: access, refreshToken: refresh }));
 
-        // 3. Com o token novo, busca os dados do usuário atualizado
-        const userResponse = await axios.get<UserProfile>(
-          `${baseURL}/core/users/me/`,
-          {
-            headers: { Authorization: `Bearer ${newAccessToken}` },
-          }
-        );
-
-        // 4. Sucesso: Hidrata o Redux
-        dispatch(
-          setCredentials({
-            user: userResponse.data,
-            accessToken: newAccessToken,
-            refreshToken: persistedRefresh,
-          })
-        );
       } catch (error) {
-        console.warn("Sessão expirada ou inválida:", error);
-        // Se falhar, limpa tudo para garantir um estado limpo
-        dispatch(logout());
-      } finally {
-        // 5. Libera a UI
-        setIsLoading(false);
+        console.warn("[AuthInitializer] ⚠️ Token expirado. Tentando refresh...");
+        
+        try {
+            const baseURL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+            const { data: tokens } = await axios.post(
+                `${baseURL}/auth/token/refresh/`,
+                { refresh }
+            );
+
+            const { data: user } = await axios.get<UserProfile>(
+                `${baseURL}/core/users/me/`,
+                { headers: { Authorization: `Bearer ${tokens.access}` } }
+            );
+
+            console.log("[AuthInitializer] ✅ Sessão renovada.");
+            dispatch(setCredentials({
+                user,
+                accessToken: tokens.access,
+                refreshToken: refresh 
+            }));
+
+        } catch (refreshError) {
+            console.error("[AuthInitializer] ❌ Falha fatal. Logout.", refreshError);
+            dispatch(logout()); // Isso também seta isInitialized = true
+        }
       }
     };
 
-    restoreSession();
+    initAuth();
   }, [dispatch]);
 
-  if (isLoading) {
+  // Bloqueia a renderização dos filhos (ProtectedLayout) até o Redux estar pronto
+  if (!isInitialized) {
     return <FullScreenLoader />;
   }
 

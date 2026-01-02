@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { store } from '@/store';
 import { ThemeProvider } from './ThemeProvider';
 import { Toaster } from 'sonner';
+import { AuthInitializer } from './AuthInitializer';
 
 const queryClient = new QueryClient();
 
@@ -15,7 +16,9 @@ export function VitaliaProvider({ children }: { children: React.ReactNode }) {
     <ReduxProvider store={store}>
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
+          <AuthInitializer>
           {children}
+          </AuthInitializer>
           <Toaster richColors position="top-right" />
         </ThemeProvider>
       </QueryClientProvider>

@@ -7,21 +7,34 @@ import { useRouter } from 'next/navigation';
 import { useAppSelector } from '@/store/hooks';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { Loader2 } from 'lucide-react';
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, user } = useAppSelector((state) => state.auth);
+  // Agora lemos também o isInitialized
+  // @ts-ignore (se o TS reclamar do tipo estendido, pode ignorar por enquanto ou atualizar o types/auth.ts)
+  const { isAuthenticated, user, isInitialized } = useAppSelector((state) => state.auth);
   const router = useRouter();
 
   useEffect(() => {
-    // Se o Redux diz que não está autenticado, manda pro Login
-    // Nota: O AuthInitializer no providers/AppProviders.tsx já tentou restaurar a sessão antes disso renderizar
-    if (!isAuthenticated) {
+    // Só toma decisão de redirecionar se o sistema JÁ inicializou
+    if (isInitialized && !isAuthenticated) {
+      console.warn('[ProtectedLayout] Acesso negado. Redirecionando...');
       router.push('/login');
     }
-  }, [isAuthenticated, router]);
+  }, [isInitialized, isAuthenticated, router]);
 
+  // Se não inicializou, mostra Loading (mesmo que AuthInitializer já mostre, segurança dupla)
+  if (!isInitialized) {
+    return (
+        <div className="flex h-screen items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+    );
+  }
+
+  // Se inicializou mas não tá logado, retorna null (o useEffect vai redirecionar)
   if (!isAuthenticated || !user) {
-    return null; // Ou um Loading Spinner
+    return null; 
   }
 
   return (

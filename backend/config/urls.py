@@ -25,7 +25,7 @@ api_v1_patterns = [
     
     # Apps da Vitalia (Placeholder por enquanto, criaremos os urls.py de cada app na sequência)
     path('social/', include('social.urls')), 
-    # path('medical/', include('medical.urls')),
+    path('medical/', include('medical.urls')),
     path('core/', include('core.urls')),
 ]
 

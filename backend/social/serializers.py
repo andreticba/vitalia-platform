@@ -55,3 +55,19 @@ class FamilyRecipeWriteSerializer(serializers.ModelSerializer):
         # Associa automaticamente ao usuário logado
         validated_data['author'] = self.context['request'].user
         return super().create(validated_data)
+
+class FeedItemSerializer(serializers.Serializer):
+    """
+    Serializer polimórfico para o Feed.
+    Pode retornar uma Receita, uma Conquista (Badge) ou uma Atividade Física.
+    """
+    type = serializers.CharField() # 'RECIPE', 'ACTIVITY', 'BADGE'
+    id = serializers.CharField()
+    title = serializers.CharField()
+    author_name = serializers.CharField()
+    author_avatar = serializers.CharField(required=False)
+    timestamp = serializers.DateTimeField()
+    
+    # Metadados flexíveis
+    details = serializers.JSONField(required=False)
+    likes_count = serializers.IntegerField(default=0)
